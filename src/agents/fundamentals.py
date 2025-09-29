@@ -7,20 +7,20 @@ import json
 from src.tools.api import get_financial_metrics
 
 
-##### Fundamental Agent #####
+##### 基本面分析代理 #####
 def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_analyst_agent"):
-    """Analyzes fundamental data and generates trading signals for multiple tickers."""
+    """分析基本面数据并为多个股票生成交易信号。"""
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
     api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
-    # Initialize fundamental analysis for each ticker
+    # 为每个股票代码初始化基本面分析
     fundamental_analysis = {}
 
     for ticker in tickers:
         progress.update_status(agent_id, ticker, "Fetching financial metrics")
 
-        # Get the financial metrics
+        # 获取财务指标
         financial_metrics = get_financial_metrics(
             ticker=ticker,
             end_date=end_date,
@@ -33,23 +33,23 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
             progress.update_status(agent_id, ticker, "Failed: No financial metrics found")
             continue
 
-        # Pull the most recent financial metrics
+        # 获取最新的财务指标
         metrics = financial_metrics[0]
 
-        # Initialize signals list for different fundamental aspects
+        # 为不同的基本面方面初始化信号列表
         signals = []
         reasoning = {}
 
         progress.update_status(agent_id, ticker, "Analyzing profitability")
-        # 1. Profitability Analysis
+        # 1. 盈利能力分析
         return_on_equity = metrics.return_on_equity
         net_margin = metrics.net_margin
         operating_margin = metrics.operating_margin
 
         thresholds = [
-            (return_on_equity, 0.15),  # Strong ROE above 15%
-            (net_margin, 0.20),  # Healthy profit margins
-            (operating_margin, 0.15),  # Strong operating efficiency
+            (return_on_equity, 0.15),  # 强大的股本回报率超过15%
+            (net_margin, 0.20),  # 健康的净利润率
+            (operating_margin, 0.15),  # 强大的运营效率
         ]
         profitability_score = sum(metric is not None and metric > threshold for metric, threshold in thresholds)
 
@@ -60,15 +60,15 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         }
 
         progress.update_status(agent_id, ticker, "Analyzing growth")
-        # 2. Growth Analysis
+        # 2. 增长分析
         revenue_growth = metrics.revenue_growth
         earnings_growth = metrics.earnings_growth
         book_value_growth = metrics.book_value_growth
 
         thresholds = [
-            (revenue_growth, 0.10),  # 10% revenue growth
-            (earnings_growth, 0.10),  # 10% earnings growth
-            (book_value_growth, 0.10),  # 10% book value growth
+            (revenue_growth, 0.10),  # 10%的收入增长
+            (earnings_growth, 0.10),  # 10%的盈利增长
+            (book_value_growth, 0.10),  # 10%的账面价值增长
         ]
         growth_score = sum(metric is not None and metric > threshold for metric, threshold in thresholds)
 
@@ -79,18 +79,18 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         }
 
         progress.update_status(agent_id, ticker, "Analyzing financial health")
-        # 3. Financial Health
+        # 3. 财务健康状况
         current_ratio = metrics.current_ratio
         debt_to_equity = metrics.debt_to_equity
         free_cash_flow_per_share = metrics.free_cash_flow_per_share
         earnings_per_share = metrics.earnings_per_share
 
         health_score = 0
-        if current_ratio and current_ratio > 1.5:  # Strong liquidity
+        if current_ratio and current_ratio > 1.5:  # 强大的流动性
             health_score += 1
-        if debt_to_equity and debt_to_equity < 0.5:  # Conservative debt levels
+        if debt_to_equity and debt_to_equity < 0.5:  # 保守的债务水平
             health_score += 1
-        if free_cash_flow_per_share and earnings_per_share and free_cash_flow_per_share > earnings_per_share * 0.8:  # Strong FCF conversion
+        if free_cash_flow_per_share and earnings_per_share and free_cash_flow_per_share > earnings_per_share * 0.8:  # 强大的自由现金流转换
             health_score += 1
 
         signals.append("bullish" if health_score >= 2 else "bearish" if health_score == 0 else "neutral")
@@ -100,15 +100,15 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         }
 
         progress.update_status(agent_id, ticker, "Analyzing valuation ratios")
-        # 4. Price to X ratios
+        # 4. 市价比率
         pe_ratio = metrics.price_to_earnings_ratio
         pb_ratio = metrics.price_to_book_ratio
         ps_ratio = metrics.price_to_sales_ratio
 
         thresholds = [
-            (pe_ratio, 25),  # Reasonable P/E ratio
-            (pb_ratio, 3),  # Reasonable P/B ratio
-            (ps_ratio, 5),  # Reasonable P/S ratio
+            (pe_ratio, 25),  # 合理的市盈率
+            (pb_ratio, 3),  # 合理的市净率
+            (ps_ratio, 5),  # 合理的市销率
         ]
         price_ratio_score = sum(metric is not None and metric > threshold for metric, threshold in thresholds)
 
@@ -119,7 +119,7 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         }
 
         progress.update_status(agent_id, ticker, "Calculating final signal")
-        # Determine overall signal
+        # 确定总体信号
         bullish_signals = signals.count("bullish")
         bearish_signals = signals.count("bearish")
 
@@ -130,7 +130,7 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
         else:
             overall_signal = "neutral"
 
-        # Calculate confidence level
+        # 计算置信度
         total_signals = len(signals)
         confidence = round(max(bullish_signals, bearish_signals) / total_signals, 2) * 100
 
@@ -142,17 +142,17 @@ def fundamentals_analyst_agent(state: AgentState, agent_id: str = "fundamentals_
 
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
 
-    # Create the fundamental analysis message
+    # 创建基本面分析消息
     message = HumanMessage(
         content=json.dumps(fundamental_analysis),
         name=agent_id,
     )
 
-    # Print the reasoning if the flag is set
+    # 如果设置了标志，则打印推理
     if state["metadata"]["show_reasoning"]:
         show_agent_reasoning(fundamental_analysis, "Fundamental Analysis Agent")
 
-    # Add the signal to the analyst_signals list
+    # 将信号添加到 analyst_signals 列表中
     state["data"]["analyst_signals"][agent_id] = fundamental_analysis
 
     progress.update_status(agent_id, None, "Done")

@@ -12,18 +12,18 @@ from src.utils.llm import call_llm
 
 class PortfolioDecision(BaseModel):
     action: Literal["buy", "sell", "short", "cover", "hold"]
-    quantity: int = Field(description="Number of shares to trade")
-    confidence: int = Field(description="Confidence 0-100")
-    reasoning: str = Field(description="Reasoning for the decision")
+    quantity: int = Field(description="要交易的股票数量")
+    confidence: int = Field(description="置信度 0-100")
+    reasoning: str = Field(description="决策理由")
 
 
 class PortfolioManagerOutput(BaseModel):
-    decisions: dict[str, PortfolioDecision] = Field(description="Dictionary of ticker to trading decisions")
+    decisions: dict[str, PortfolioDecision] = Field(description="股票代码到交易决策的字典")
 
 
-##### Portfolio Management Agent #####
+##### 投资组合管理代理 #####
 def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_manager"):
-    """Makes final trading decisions and generates orders for multiple tickers"""
+    """为多个股票代码做出最终交易决策并生成订单"""
 
     portfolio = state["data"]["portfolio"]
     analyst_signals = state["data"]["analyst_signals"]
@@ -34,26 +34,26 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
     max_shares = {}
     signals_by_ticker = {}
     for ticker in tickers:
-        progress.update_status(agent_id, ticker, "Processing analyst signals")
+        progress.update_status(agent_id, ticker, "正在处理分析师信号")
 
-        # Find the corresponding risk manager for this portfolio manager
+        # 为该投资组合管理器找到相应的风险管理器
         if agent_id.startswith("portfolio_manager_"):
             suffix = agent_id.split('_')[-1]
             risk_manager_id = f"risk_management_agent_{suffix}"
         else:
-            risk_manager_id = "risk_management_agent"  # Fallback for CLI
+            risk_manager_id = "risk_management_agent"  # CLI的备用方案
 
         risk_data = analyst_signals.get(risk_manager_id, {}).get(ticker, {})
         position_limits[ticker] = risk_data.get("remaining_position_limit", 0.0)
         current_prices[ticker] = float(risk_data.get("current_price", 0.0))
 
-        # Calculate maximum shares allowed based on position limit and price
+        # 根据仓位限制和价格计算允许的最大股数
         if current_prices[ticker] > 0:
             max_shares[ticker] = int(position_limits[ticker] // current_prices[ticker])
         else:
             max_shares[ticker] = 0
 
-        # Compress analyst signals to {sig, conf}
+        # 将分析师信号压缩为 {sig, conf}
         ticker_signals = {}
         for agent, signals in analyst_signals.items():
             if not agent.startswith("risk_management_agent") and ticker in signals:
@@ -65,7 +65,7 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
 
     state["data"]["current_prices"] = current_prices
 
-    progress.update_status(agent_id, None, "Generating trading decisions")
+    progress.update_status(agent_id, None, "正在生成交易决策")
 
     result = generate_trading_decision(
         tickers=tickers,
@@ -83,9 +83,9 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
 
     if state["metadata"]["show_reasoning"]:
         show_agent_reasoning({ticker: decision.model_dump() for ticker, decision in result.decisions.items()},
-                             "Portfolio Manager")
+                             "投资组合经理")
 
-    progress.update_status(agent_id, None, "Done")
+    progress.update_status(agent_id, None, "完成")
 
     return {
         "messages": state["messages"] + [message],
@@ -99,7 +99,7 @@ def compute_allowed_actions(
         max_shares: dict[str, int],
         portfolio: dict[str, float],
 ) -> dict[str, dict[str, int]]:
-    """Compute allowed actions and max quantities for each ticker deterministically."""
+    """确定性地计算每个股票代码允许的行动和最大数量。"""
     allowed = {}
     cash = float(portfolio.get("cash", 0.0))
     positions = portfolio.get("positions", {}) or {}
@@ -117,10 +117,10 @@ def compute_allowed_actions(
         short_shares = int(pos.get("short", 0) or 0)
         max_qty = int(max_shares.get(ticker, 0) or 0)
 
-        # Start with zeros
+        # 从零开始
         actions = {"buy": 0, "sell": 0, "short": 0, "cover": 0, "hold": 0}
 
-        # Long side
+        # 多头方面
         if long_shares > 0:
             actions["sell"] = long_shares
         if cash > 0 and price > 0:
@@ -129,12 +129,12 @@ def compute_allowed_actions(
             if max_buy > 0:
                 actions["buy"] = max_buy
 
-        # Short side
+        # 空头方面
         if short_shares > 0:
             actions["cover"] = short_shares
         if price > 0 and max_qty > 0:
             if margin_requirement <= 0.0:
-                # If margin requirement is zero or unset, only cap by max_qty
+                # 如果保证金要求为零或未设置，则仅受最大数量限制
                 max_short = max_qty
             else:
                 available_margin = max(0.0, (equity / margin_requirement) - margin_used)
@@ -143,10 +143,10 @@ def compute_allowed_actions(
             if max_short > 0:
                 actions["short"] = max_short
 
-        # Hold always valid
+        # 持有总是有效的
         actions["hold"] = 0
 
-        # Prune zero-capacity actions to reduce tokens, keep hold
+        # 修剪零容量的动作以减少令牌，保留持有
         pruned = {"hold": 0}
         for k, v in actions.items():
             if k != "hold" and v > 0:
@@ -158,7 +158,7 @@ def compute_allowed_actions(
 
 
 def _compact_signals(signals_by_ticker: dict[str, dict]) -> dict[str, dict]:
-    """Keep only {agent: {sig, conf}} and drop empty agents."""
+    """仅保留 {agent: {sig, conf}} 并删除空代理。"""
     out = {}
     for t, agents in signals_by_ticker.items():
         if not agents:
@@ -183,20 +183,20 @@ def generate_trading_decision(
         agent_id: str,
         state: AgentState,
 ) -> PortfolioManagerOutput:
-    """Get decisions from the LLM with deterministic constraints and a minimal prompt."""
+    """通过确定性约束和最小化提示从LLM获取决策。"""
 
-    # Deterministic constraints
+    # 确定性约束
     allowed_actions_full = compute_allowed_actions(tickers, current_prices, max_shares, portfolio)
 
-    # Pre-fill pure holds to avoid sending them to the LLM at all
+    # 预先填充纯持有，以避免将它们完全发送给LLM
     prefilled_decisions: dict[str, PortfolioDecision] = {}
     tickers_for_llm: list[str] = []
     for t in tickers:
         aa = allowed_actions_full.get(t, {"hold": 0})
-        # If only 'hold' key exists, there is no trade possible
+        # 如果只有 'hold' 键存在，则没有可行的交易
         if set(aa.keys()) == {"hold"}:
             prefilled_decisions[t] = PortfolioDecision(
-                action="hold", quantity=0, confidence=100.0, reasoning="No valid trade available"
+                action="hold", quantity=0, confidence=100.0, reasoning="没有可用的有效交易"
             )
         else:
             tickers_for_llm.append(t)
@@ -204,25 +204,25 @@ def generate_trading_decision(
     if not tickers_for_llm:
         return PortfolioManagerOutput(decisions=prefilled_decisions)
 
-    # Build compact payloads only for tickers sent to LLM
+    # 仅为发送到LLM的股票代码构建紧凑的有效负载
     compact_signals = _compact_signals({t: signals_by_ticker.get(t, {}) for t in tickers_for_llm})
     compact_allowed = {t: allowed_actions_full[t] for t in tickers_for_llm}
 
-    # Minimal prompt template
+    # 最小化提示模板
     template = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "You are a portfolio manager.\n"
-                "Inputs per ticker: analyst signals and allowed actions with max qty (already validated).\n"
-                "Pick one allowed action per ticker and a quantity ≤ the max. "
-                "Keep reasoning very concise (max 100 chars). No cash or margin math. Return JSON only."
+                "你是一位投资组合经理。\n"
+                "每个股票代码的输入：分析师信号和允许的行动及最大数量（已验证）。\n"
+                "为每个股票代码选择一个允许的行动和≤最大值的数量。 "
+                "保持推理非常简洁（最多100个字符）。不要进行现金或保证金计算。只返回JSON。"
             ),
             (
                 "human",
-                "Signals:\n{signals}\n\n"
-                "Allowed:\n{allowed}\n\n"
-                "Format:\n"
+                "信号：\n{signals}\n\n"
+                "允许的操作：\n{allowed}\n\n"
+                "格式：\n"
                 "{{\n"
                 '  "decisions": {{\n'
                 '    "TICKER": {{"action":"...","quantity":int,"confidence":int,"reasoning":"..."}}\n'
@@ -238,13 +238,13 @@ def generate_trading_decision(
     }
     prompt = template.invoke(prompt_data)
 
-    # Default factory fills remaining tickers as hold if the LLM fails
+    # 如果LLM失败，默认工厂将剩余的股票代码填充为持有
     def create_default_portfolio_output():
-        # start from prefilled
+        # 从预填充的决策开始
         decisions = dict(prefilled_decisions)
         for t in tickers_for_llm:
             decisions[t] = PortfolioDecision(
-                action="hold", quantity=0, confidence=0.0, reasoning="Default decision: hold"
+                action="hold", quantity=0, confidence=0.0, reasoning="默认决策：持有"
             )
         return PortfolioManagerOutput(decisions=decisions)
 
@@ -256,7 +256,7 @@ def generate_trading_decision(
         default_factory=create_default_portfolio_output,
     )
 
-    # Merge prefilled holds with LLM results
+    # 将预填充的持有与LLM结果合并
     merged = dict(prefilled_decisions)
     merged.update(llm_out.decisions)
     return PortfolioManagerOutput(decisions=merged)

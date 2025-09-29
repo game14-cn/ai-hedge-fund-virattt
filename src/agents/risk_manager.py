@@ -7,21 +7,21 @@ import numpy as np
 import pandas as pd
 from src.utils.api_key import get_api_key_from_state
 
-##### Risk Management Agent #####
+##### 风险管理代理 #####
 def risk_management_agent(state: AgentState, agent_id: str = "risk_management_agent"):
-    """Controls position sizing based on volatility-adjusted risk factors for multiple tickers."""
+    """根据多个股票的波动率调整风险因素来控制头寸规模。"""
     portfolio = state["data"]["portfolio"]
     data = state["data"]
     tickers = data["tickers"]
     api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
     
-    # Initialize risk analysis for each ticker
+    # 初始化每个股票的风险分析
     risk_analysis = {}
-    current_prices = {}  # Store prices here to avoid redundant API calls
-    volatility_data = {}  # Store volatility metrics
-    returns_by_ticker: dict[str, pd.Series] = {}  # For correlation analysis
+    current_prices = {}  # 在此处存储价格以避免冗余的API调用
+    volatility_data = {}  # 存储波动率指标
+    returns_by_ticker: dict[str, pd.Series] = {}  # 用于相关性分析
 
-    # First, fetch prices and calculate volatility for all relevant tickers
+    # 首先，获取所有相关股票的价格并计算波动率
     all_tickers = set(tickers) | set(portfolio.get("positions", {}).keys())
     
     for ticker in all_tickers:
@@ -37,9 +37,9 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
         if not prices:
             progress.update_status(agent_id, ticker, "Warning: No price data found")
             volatility_data[ticker] = {
-                "daily_volatility": 0.05,  # Default fallback volatility (5% daily)
+                "daily_volatility": 0.05,  # 默认回退波动率（每日5%）
                 "annualized_volatility": 0.05 * np.sqrt(252),
-                "volatility_percentile": 100,  # Assume high risk if no data
+                "volatility_percentile": 100,  # 如果没有数据，则假定高风险
                 "data_points": 0
             }
             continue
@@ -50,11 +50,11 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
             current_price = prices_df["close"].iloc[-1]
             current_prices[ticker] = current_price
             
-            # Calculate volatility metrics
+            # 计算波动率指标
             volatility_metrics = calculate_volatility_metrics(prices_df)
             volatility_data[ticker] = volatility_metrics
 
-            # Store returns for correlation analysis (use close-to-close returns)
+            # 存储收益率用于相关性分析（使用收盘价对收盘价的收益率）
             daily_returns = prices_df["close"].pct_change().dropna()
             if len(daily_returns) > 0:
                 returns_by_ticker[ticker] = daily_returns
@@ -74,7 +74,7 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
                 "data_points": len(prices_df) if not prices_df.empty else 0
             }
 
-    # Build returns DataFrame aligned across tickers for correlation analysis
+    # 构建跨股票对齐的收益率DataFrame以进行相关性分析
     correlation_matrix = None
     if len(returns_by_ticker) >= 2:
         try:
@@ -84,25 +84,25 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
         except Exception:
             correlation_matrix = None
 
-    # Determine which tickers currently have exposure (non-zero absolute position)
+    # 确定当前哪些股票有风险敞口（非零绝对头寸）
     active_positions = {
         t for t, pos in portfolio.get("positions", {}).items()
         if abs(pos.get("long", 0) - pos.get("short", 0)) > 0
     }
 
-    # Calculate total portfolio value based on current market prices (Net Liquidation Value)
+    # 根据当前市价计算总投资组合价值（净清算价值）
     total_portfolio_value = portfolio.get("cash", 0.0)
     
     for ticker, position in portfolio.get("positions", {}).items():
         if ticker in current_prices:
-            # Add market value of long positions
+            # 加上多头头寸的市值
             total_portfolio_value += position.get("long", 0) * current_prices[ticker]
-            # Subtract market value of short positions
+            # 减去空头头寸的市值
             total_portfolio_value -= position.get("short", 0) * current_prices[ticker]
     
     progress.update_status(agent_id, None, f"Total portfolio value: {total_portfolio_value:.2f}")
 
-    # Calculate volatility- and correlation-adjusted risk limits for each ticker
+    # 计算每个股票经波动率和相关性调整后的风险限额
     for ticker in tickers:
         progress.update_status(agent_id, ticker, "Calculating volatility- and correlation-adjusted limits")
         
@@ -120,18 +120,18 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
         current_price = current_prices[ticker]
         vol_data = volatility_data.get(ticker, {})
         
-        # Calculate current market value of this position
+        # 计算此头寸的当前市值
         position = portfolio.get("positions", {}).get(ticker, {})
         long_value = position.get("long", 0) * current_price
         short_value = position.get("short", 0) * current_price
-        current_position_value = abs(long_value - short_value)  # Use absolute exposure
+        current_position_value = abs(long_value - short_value)  # 使用绝对风险敞口
         
-        # Volatility-adjusted limit pct
+        # 波动率调整后的限额百分比
         vol_adjusted_limit_pct = calculate_volatility_adjusted_limit(
             vol_data.get("annualized_volatility", 0.25)
         )
 
-        # Correlation adjustment
+        # 相关性调整
         corr_metrics = {
             "avg_correlation_with_active": None,
             "max_correlation_with_active": None,
@@ -139,36 +139,36 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
         }
         corr_multiplier = 1.0
         if correlation_matrix is not None and ticker in correlation_matrix.columns:
-            # Compute correlations with active positions (exclude self)
+            # 计算与活跃头寸的相关性（排除自身）
             comparable = [t for t in active_positions if t in correlation_matrix.columns and t != ticker]
             if not comparable:
-                # If no active positions, compare with all other available tickers
+                # 如果没有活跃头寸，则与所有其他可用股票进行比较
                 comparable = [t for t in correlation_matrix.columns if t != ticker]
             if comparable:
                 series = correlation_matrix.loc[ticker, comparable]
-                # Drop NaNs just in case
+                # 以防万一，删除NaN
                 series = series.dropna()
                 if len(series) > 0:
                     avg_corr = float(series.mean())
                     max_corr = float(series.max())
                     corr_metrics["avg_correlation_with_active"] = avg_corr
                     corr_metrics["max_correlation_with_active"] = max_corr
-                    # Top 3 most correlated tickers
+                    # 相关性最高的3个股票
                     top_corr = series.sort_values(ascending=False).head(3)
                     corr_metrics["top_correlated_tickers"] = [
                         {"ticker": idx, "correlation": float(val)} for idx, val in top_corr.items()
                     ]
                     corr_multiplier = calculate_correlation_multiplier(avg_corr)
         
-        # Combine volatility and correlation adjustments
+        # 合并波动率和相关性调整
         combined_limit_pct = vol_adjusted_limit_pct * corr_multiplier
-        # Convert to dollar position limit
+        # 转换为美元头寸限额
         position_limit = total_portfolio_value * combined_limit_pct
         
-        # Calculate remaining limit for this position
+        # 计算该头寸的剩余限额
         remaining_position_limit = position_limit - current_position_value
         
-        # Ensure we don't exceed available cash
+        # 确保我们不超过可用现金
         max_position_size = min(remaining_position_limit, portfolio.get("cash", 0))
         
         risk_analysis[ticker] = {
@@ -210,7 +210,7 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
     if state["metadata"]["show_reasoning"]:
         show_agent_reasoning(risk_analysis, "Volatility-Adjusted Risk Management Agent")
 
-    # Add the signal to the analyst_signals list
+    # 将信号添加到analyst_signals列表中
     state["data"]["analyst_signals"][agent_id] = risk_analysis
 
     return {
@@ -220,7 +220,7 @@ def risk_management_agent(state: AgentState, agent_id: str = "risk_management_ag
 
 
 def calculate_volatility_metrics(prices_df: pd.DataFrame, lookback_days: int = 60) -> dict:
-    """Calculate comprehensive volatility metrics from price data."""
+    """从价格数据计算综合波动率指标。"""
     if len(prices_df) < 2:
         return {
             "daily_volatility": 0.05,
@@ -229,7 +229,7 @@ def calculate_volatility_metrics(prices_df: pd.DataFrame, lookback_days: int = 6
             "data_points": len(prices_df)
         }
     
-    # Calculate daily returns
+    # 计算每日收益率
     daily_returns = prices_df["close"].pct_change().dropna()
     
     if len(daily_returns) < 2:
@@ -240,24 +240,24 @@ def calculate_volatility_metrics(prices_df: pd.DataFrame, lookback_days: int = 6
             "data_points": len(daily_returns)
         }
     
-    # Use the most recent lookback_days for volatility calculation
+    # 使用最近的lookback_days进行波动率计算
     recent_returns = daily_returns.tail(min(lookback_days, len(daily_returns)))
     
-    # Calculate volatility metrics
+    # 计算波动率指标
     daily_vol = recent_returns.std()
-    annualized_vol = daily_vol * np.sqrt(252)  # Annualize assuming 252 trading days
+    annualized_vol = daily_vol * np.sqrt(252)  # 假设252个交易日进行年化
     
-    # Calculate percentile rank of recent volatility vs historical volatility
-    if len(daily_returns) >= 30:  # Need sufficient history for percentile calculation
-        # Calculate 30-day rolling volatility for the full history
+    # 计算近期波动率与历史波动率的百分位排名
+    if len(daily_returns) >= 30:  # 需要足够的历史数据来进行百分位计算
+        # 计算整个历史记录的30天滚动波动率
         rolling_vol = daily_returns.rolling(window=30).std().dropna()
         if len(rolling_vol) > 0:
-            # Compare current volatility against historical rolling volatilities
+            # 将当前波动率与历史滚动波动率进行比较
             current_vol_percentile = (rolling_vol <= daily_vol).mean() * 100
         else:
-            current_vol_percentile = 50  # Default to median
+            current_vol_percentile = 50  # 默认为中位数
     else:
-        current_vol_percentile = 50  # Default to median if insufficient data
+        current_vol_percentile = 50  # 如果数据不足，则默认为中位数
     
     return {
         "daily_volatility": float(daily_vol) if not np.isnan(daily_vol) else 0.025,
@@ -269,42 +269,42 @@ def calculate_volatility_metrics(prices_df: pd.DataFrame, lookback_days: int = 6
 
 def calculate_volatility_adjusted_limit(annualized_volatility: float) -> float:
     """
-    Calculate position limit as percentage of portfolio based on volatility.
+    根据波动率计算头寸限额占投资组合的百分比。
     
-    Logic:
-    - Low volatility (<15%): Up to 25% allocation
-    - Medium volatility (15-30%): 15-20% allocation  
-    - High volatility (>30%): 10-15% allocation
-    - Very high volatility (>50%): Max 10% allocation
+    逻辑：
+    - 低波动率 (<15%): 最高25%的配置
+    - 中等波动率 (15-30%): 15-20%的配置
+    - 高波动率 (>30%): 10-15%的配置
+    - 非常高的波动率 (>50%): 最高10%的配置
     """
-    base_limit = 0.20  # 20% baseline
+    base_limit = 0.20  # 20% 基准
     
-    if annualized_volatility < 0.15:  # Low volatility
-        # Allow higher allocation for stable stocks
-        vol_multiplier = 1.25  # Up to 25%
-    elif annualized_volatility < 0.30:  # Medium volatility  
-        # Standard allocation with slight adjustment based on volatility
+    if annualized_volatility < 0.15:  # 低波动率
+        # 允许为稳定型股票提供更高的配置
+        vol_multiplier = 1.25  # 最高25%
+    elif annualized_volatility < 0.30:  # 中等波动率
+        # 标准配置，根据波动率进行微调
         vol_multiplier = 1.0 - (annualized_volatility - 0.15) * 0.5  # 20% -> 12.5%
-    elif annualized_volatility < 0.50:  # High volatility
-        # Reduce allocation significantly
+    elif annualized_volatility < 0.50:  # 高波动率
+        # 大幅减少配置
         vol_multiplier = 0.75 - (annualized_volatility - 0.30) * 0.5  # 15% -> 5%
-    else:  # Very high volatility (>50%)
-        # Minimum allocation for very risky stocks
-        vol_multiplier = 0.50  # Max 10%
+    else:  # 非常高的波动率 (>50%)
+        # 对风险非常高的股票进行最低配置
+        vol_multiplier = 0.50  # 最高10%
     
-    # Apply bounds to ensure reasonable limits
-    vol_multiplier = max(0.25, min(1.25, vol_multiplier))  # 5% to 25% range
+    # 应用边界以确保合理的限制
+    vol_multiplier = max(0.25, min(1.25, vol_multiplier))  # 5%到25%的范围
     
     return base_limit * vol_multiplier
 
 
 def calculate_correlation_multiplier(avg_correlation: float) -> float:
-    """Map average correlation to an adjustment multiplier.
-    - Very high correlation (>= 0.8): reduce limit sharply (0.7x)
-    - High correlation (0.6-0.8): reduce (0.85x)
-    - Moderate correlation (0.4-0.6): neutral (1.0x)
-    - Low correlation (0.2-0.4): slight increase (1.05x)
-    - Very low correlation (< 0.2): increase (1.10x)
+    """将平均相关性映射到调整乘数。
+    - 非常高的相关性 (>= 0.8): 大幅降低限额 (0.7倍)
+    - 高相关性 (0.6-0.8): 降低 (0.85倍)
+    - 中等相关性 (0.4-0.6): 中性 (1.0倍)
+    - 低相关性 (0.2-0.4): 略微增加 (1.05倍)
+    - 非常低的相关性 (< 0.2): 增加 (1.10倍)
     """
     if avg_correlation >= 0.80:
         return 0.70

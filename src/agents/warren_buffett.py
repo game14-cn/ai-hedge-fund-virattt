@@ -12,26 +12,26 @@ from src.utils.api_key import get_api_key_from_state
 
 class WarrenBuffettSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
-    confidence: int = Field(description="Confidence 0-100")
-    reasoning: str = Field(description="Reasoning for the decision")
+    confidence: int = Field(description="置信度 0-100")
+    reasoning: str = Field(description="决策理由")
 
 
 def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agent"):
-    """Analyzes stocks using Buffett's principles and LLM reasoning."""
+    """使用巴菲特的原则和LLM推理来分析股票。"""
     data = state["data"]
     end_date = data["end_date"]
     tickers = data["tickers"]
     api_key = get_api_key_from_state(state, "FINANCIAL_DATASETS_API_KEY")
-    # Collect all analysis for LLM reasoning
+    # 为LLM推理收集所有分析
     analysis_data = {}
     buffett_analysis = {}
 
     for ticker in tickers:
-        progress.update_status(agent_id, ticker, "Fetching financial metrics")
-        # Fetch required data - request more periods for better trend analysis
+        progress.update_status(agent_id, ticker, "获取财务指标")
+        # 获取所需数据 - 请求更多周期以进行更好的趋势分析
         metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=10, api_key=api_key)
 
-        progress.update_status(agent_id, ticker, "Gathering financial line items")
+        progress.update_status(agent_id, ticker, "收集财务项目")
         financial_line_items = search_line_items(
             ticker,
             [
@@ -54,33 +54,33 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             api_key=api_key,
         )
 
-        progress.update_status(agent_id, ticker, "Getting market cap")
-        # Get current market cap
+        progress.update_status(agent_id, ticker, "获取市值")
+        # 获取当前市值
         market_cap = get_market_cap(ticker, end_date, api_key=api_key)
 
-        progress.update_status(agent_id, ticker, "Analyzing fundamentals")
-        # Analyze fundamentals
+        progress.update_status(agent_id, ticker, "分析基本面")
+        # 分析基本面
         fundamental_analysis = analyze_fundamentals(metrics)
 
-        progress.update_status(agent_id, ticker, "Analyzing consistency")
+        progress.update_status(agent_id, ticker, "分析一致性")
         consistency_analysis = analyze_consistency(financial_line_items)
 
-        progress.update_status(agent_id, ticker, "Analyzing competitive moat")
+        progress.update_status(agent_id, ticker, "分析竞争护城河")
         moat_analysis = analyze_moat(metrics)
 
-        progress.update_status(agent_id, ticker, "Analyzing pricing power")
-        pricing_power_analysis = analyze_pricing_power(financial_line_items, metrics)
+        progress.update_status(agent_id, ticker, "分析定价权")
+        pricing_power_analysis = analyze_pricing_power(financial_line_items)
 
-        progress.update_status(agent_id, ticker, "Analyzing book value growth")
+        progress.update_status(agent_id, ticker, "分析账面价值增长")
         book_value_analysis = analyze_book_value_growth(financial_line_items)
 
-        progress.update_status(agent_id, ticker, "Analyzing management quality")
+        progress.update_status(agent_id, ticker, "分析管理质量")
         mgmt_analysis = analyze_management_quality(financial_line_items)
 
-        progress.update_status(agent_id, ticker, "Calculating intrinsic value")
+        progress.update_status(agent_id, ticker, "计算内在价值")
         intrinsic_value_analysis = calculate_intrinsic_value(financial_line_items)
 
-        # Calculate total score without circle of competence (LLM will handle that)
+        # 计算总分，不包括能力圈（LLM将处理）
         total_score = (
                 fundamental_analysis["score"] +
                 consistency_analysis["score"] +
@@ -90,22 +90,22 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
                 book_value_analysis["score"]
         )
 
-        # Update max possible score calculation
+        # 更新最高可能得分计算
         max_possible_score = (
-                10 +  # fundamental_analysis (ROE, debt, margins, current ratio)
+                10 +  # 基本面分析 (ROE、债务、利润率、流动比率)
                 moat_analysis["max_score"] +
                 mgmt_analysis["max_score"] +
-                5 +  # pricing_power (0-5)
-                5  # book_value_growth (0-5)
+                5 +  # 定价权 (0-5)
+                5  # 账面价值增长 (0-5)
         )
 
-        # Add margin of safety analysis if we have both intrinsic value and current price
+        # 如果我们同时拥有内在价值和当前价格，则增加安全边际分析
         margin_of_safety = None
         intrinsic_value = intrinsic_value_analysis["intrinsic_value"]
         if intrinsic_value and market_cap:
             margin_of_safety = (intrinsic_value - market_cap) / market_cap
 
-        # Combine all analysis results for LLM evaluation
+        # 合并所有分析结果以供LLM评估
         analysis_data[ticker] = {
             "ticker": ticker,
             "score": total_score,
@@ -121,7 +121,7 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             "margin_of_safety": margin_of_safety,
         }
 
-        progress.update_status(agent_id, ticker, "Generating Warren Buffett analysis")
+        progress.update_status(agent_id, ticker, "生成巴菲特分析")
         buffett_output = generate_buffett_output(
             ticker=ticker,
             analysis_data=analysis_data[ticker],
@@ -129,32 +129,32 @@ def warren_buffett_agent(state: AgentState, agent_id: str = "warren_buffett_agen
             agent_id=agent_id,
         )
 
-        # Store analysis in consistent format with other agents
+        # 以与其他代理一致的格式存储分析
         buffett_analysis[ticker] = {
             "signal": buffett_output.signal,
             "confidence": buffett_output.confidence,
             "reasoning": buffett_output.reasoning,
         }
 
-        progress.update_status(agent_id, ticker, "Done", analysis=buffett_output.reasoning)
+        progress.update_status(agent_id, ticker, "完成", analysis=buffett_output.reasoning)
 
-    # Create the message
+    # 创建消息
     message = HumanMessage(content=json.dumps(buffett_analysis), name=agent_id)
 
-    # Show reasoning if requested
+    # 如果请求，则显示推理
     if state["metadata"]["show_reasoning"]:
         show_agent_reasoning(buffett_analysis, agent_id)
 
-    # Add the signal to the analyst_signals list
+    # 将信号添加到analyst_signals列表中
     state["data"]["analyst_signals"][agent_id] = buffett_analysis
 
-    progress.update_status(agent_id, None, "Done")
+    progress.update_status(agent_id, None, "完成")
 
     return {"messages": [message], "data": state["data"]}
 
 
 def analyze_fundamentals(metrics: list) -> dict[str, any]:
-    """Analyze company fundamentals based on Buffett's criteria."""
+    """根据巴菲特的标准分析公司基本面。"""
     if not metrics:
         return {"score": 0, "details": "Insufficient fundamental data"}
 
@@ -163,71 +163,71 @@ def analyze_fundamentals(metrics: list) -> dict[str, any]:
     score = 0
     reasoning = []
 
-    # Check ROE (Return on Equity)
-    if latest_metrics.return_on_equity and latest_metrics.return_on_equity > 0.15:  # 15% ROE threshold
+    # 检查ROE (净资产收益率)
+    if latest_metrics.return_on_equity and latest_metrics.return_on_equity > 0.15:  # 15% ROE 阈值
         score += 2
-        reasoning.append(f"Strong ROE of {latest_metrics.return_on_equity:.1%}")
+        reasoning.append(f"强劲的净资产收益率 {latest_metrics.return_on_equity:.1%}")
     elif latest_metrics.return_on_equity:
-        reasoning.append(f"Weak ROE of {latest_metrics.return_on_equity:.1%}")
+        reasoning.append(f"疲弱的净资产收益率 {latest_metrics.return_on_equity:.1%}")
     else:
-        reasoning.append("ROE data not available")
+        reasoning.append("净资产收益率数据不可用")
 
-    # Check Debt to Equity
+    # 检查债务股本比
     if latest_metrics.debt_to_equity and latest_metrics.debt_to_equity < 0.5:
         score += 2
-        reasoning.append("Conservative debt levels")
+        reasoning.append("保守的债务水平")
     elif latest_metrics.debt_to_equity:
-        reasoning.append(f"High debt to equity ratio of {latest_metrics.debt_to_equity:.1f}")
+        reasoning.append(f"高债务股本比 {latest_metrics.debt_to_equity:.1f}")
     else:
-        reasoning.append("Debt to equity data not available")
+        reasoning.append("债务股本比数据不可用")
 
-    # Check Operating Margin
+    # 检查营业利润率
     if latest_metrics.operating_margin and latest_metrics.operating_margin > 0.15:
         score += 2
-        reasoning.append("Strong operating margins")
+        reasoning.append("强劲的营业利润率")
     elif latest_metrics.operating_margin:
-        reasoning.append(f"Weak operating margin of {latest_metrics.operating_margin:.1%}")
+        reasoning.append(f"疲弱的营业利润率 {latest_metrics.operating_margin:.1%}")
     else:
-        reasoning.append("Operating margin data not available")
+        reasoning.append("营业利润率数据不可用")
 
-    # Check Current Ratio
+    # 检查流动比率
     if latest_metrics.current_ratio and latest_metrics.current_ratio > 1.5:
         score += 1
-        reasoning.append("Good liquidity position")
+        reasoning.append("良好的流动性状况")
     elif latest_metrics.current_ratio:
-        reasoning.append(f"Weak liquidity with current ratio of {latest_metrics.current_ratio:.1f}")
+        reasoning.append(f"流动性疲弱，流动比率为 {latest_metrics.current_ratio:.1f}")
     else:
-        reasoning.append("Current ratio data not available")
+        reasoning.append("流动比率数据不可用")
 
     return {"score": score, "details": "; ".join(reasoning), "metrics": latest_metrics.model_dump()}
 
 
 def analyze_consistency(financial_line_items: list) -> dict[str, any]:
-    """Analyze earnings consistency and growth."""
-    if len(financial_line_items) < 4:  # Need at least 4 periods for trend analysis
+    """分析收益的一致性和增长。"""
+    if len(financial_line_items) < 4:  # 趋势分析至少需要4个周期
         return {"score": 0, "details": "Insufficient historical data"}
 
     score = 0
     reasoning = []
 
-    # Check earnings growth trend
+    # 检查盈利增长趋势
     earnings_values = [item.net_income for item in financial_line_items if item.net_income]
     if len(earnings_values) >= 4:
-        # Simple check: is each period's earnings bigger than the next?
+        # 简单检查：每个周期的收益是否都比下一个周期大？
         earnings_growth = all(earnings_values[i] > earnings_values[i + 1] for i in range(len(earnings_values) - 1))
 
         if earnings_growth:
             score += 3
-            reasoning.append("Consistent earnings growth over past periods")
+            reasoning.append("过去几个时期的收益持续增长")
         else:
-            reasoning.append("Inconsistent earnings growth pattern")
+            reasoning.append("收益增长模式不一致")
 
-        # Calculate total growth rate from oldest to latest
+        # 计算从最旧到最新的总增长率
         if len(earnings_values) >= 2 and earnings_values[-1] != 0:
             growth_rate = (earnings_values[0] - earnings_values[-1]) / abs(earnings_values[-1])
-            reasoning.append(f"Total earnings growth of {growth_rate:.1%} over past {len(earnings_values)} periods")
+            reasoning.append(f"在过去 {len(earnings_values)} 个时期内，总收益增长率为 {growth_rate:.1%}")
     else:
-        reasoning.append("Insufficient earnings data for trend analysis")
+        reasoning.append("用于趋势分析的收益数据不足")
 
     return {
         "score": score,
@@ -237,79 +237,79 @@ def analyze_consistency(financial_line_items: list) -> dict[str, any]:
 
 def analyze_moat(metrics: list) -> dict[str, any]:
     """
-    Evaluate whether the company likely has a durable competitive advantage (moat).
-    Enhanced to include multiple moat indicators that Buffett actually looks for:
-    1. Consistent high returns on capital
-    2. Pricing power (stable/growing margins)
-    3. Scale advantages (improving metrics with size)
-    4. Brand strength (inferred from margins and consistency)
-    5. Switching costs (inferred from customer retention)
+    评估公司是否可能拥有持久的竞争优势（护城河）。
+    增强版，包括巴菲特实际寻找的多个护城河指标：
+    1. 持续的高资本回报率
+    2. 定价权（稳定/增长的利润率）
+    3. 规模优势（随规模改善的指标）
+    4. 品牌实力（从利润率和一致性推断）
+    5. 转换成本（从客户保留率推断）
     """
-    if not metrics or len(metrics) < 5:  # Need more data for proper moat analysis
+    if not metrics or len(metrics) < 5:  # 需要更多数据才能进行适当的护城河分析
         return {"score": 0, "max_score": 5, "details": "Insufficient data for comprehensive moat analysis"}
 
     reasoning = []
     moat_score = 0
     max_score = 5
 
-    # 1. Return on Capital Consistency (Buffett's favorite moat indicator)
+    # 1. 资本回报率一致性（巴菲特最喜欢的护城河指标）
     historical_roes = [m.return_on_equity for m in metrics if m.return_on_equity is not None]
     historical_roics = [m.return_on_invested_capital for m in metrics if
                         hasattr(m, 'return_on_invested_capital') and m.return_on_invested_capital is not None]
 
     if len(historical_roes) >= 5:
-        # Check for consistently high ROE (>15% for most periods)
+        # 检查持续高ROE（大部分时期 >15%）
         high_roe_periods = sum(1 for roe in historical_roes if roe > 0.15)
         roe_consistency = high_roe_periods / len(historical_roes)
 
-        if roe_consistency >= 0.8:  # 80%+ of periods with ROE > 15%
+        if roe_consistency >= 0.8:  # 80%以上的时期的ROE > 15%
             moat_score += 2
             avg_roe = sum(historical_roes) / len(historical_roes)
             reasoning.append(
-                f"Excellent ROE consistency: {high_roe_periods}/{len(historical_roes)} periods >15% (avg: {avg_roe:.1%}) - indicates durable competitive advantage")
+                f"优秀的ROE一致性：{high_roe_periods}/{len(historical_roes)} 个时期 >15% (平均: {avg_roe:.1%}) - 表明持久的竞争优势")
         elif roe_consistency >= 0.6:
             moat_score += 1
-            reasoning.append(f"Good ROE performance: {high_roe_periods}/{len(historical_roes)} periods >15%")
+            reasoning.append(f"良好的ROE表现：{high_roe_periods}/{len(historical_roes)} 个时期 >15%")
         else:
-            reasoning.append(f"Inconsistent ROE: only {high_roe_periods}/{len(historical_roes)} periods >15%")
+            reasoning.append(f"不一致的ROE：只有 {high_roe_periods}/{len(historical_roes)} 个时期 >15%")
     else:
-        reasoning.append("Insufficient ROE history for moat analysis")
+        reasoning.append("护城河分析的ROE历史数据不足")
 
-    # 2. Operating Margin Stability (Pricing Power Indicator)
+    # 2. 营业利润率稳定性（定价权指标）
     historical_margins = [m.operating_margin for m in metrics if m.operating_margin is not None]
     if len(historical_margins) >= 5:
-        # Check for stable or improving margins (sign of pricing power)
+        # 检查稳定或改善的利润率（定价权的标志）
         avg_margin = sum(historical_margins) / len(historical_margins)
-        recent_margins = historical_margins[:3]  # Last 3 periods
-        older_margins = historical_margins[-3:]  # First 3 periods
+        recent_margins = historical_margins[:3]  # 最近3个时期
+        older_margins = historical_margins[-3:]  # 最早3个时期
 
         recent_avg = sum(recent_margins) / len(recent_margins)
         older_avg = sum(older_margins) / len(older_margins)
 
-        if avg_margin > 0.2 and recent_avg >= older_avg:  # 20%+ margins and stable/improving
+        if avg_margin > 0.2 and recent_avg >= older_avg:  # 20%以上的利润率且稳定/改善
             moat_score += 1
-            reasoning.append(f"Strong and stable operating margins (avg: {avg_margin:.1%}) indicate pricing power moat")
-        elif avg_margin > 0.15:  # At least decent margins
-            reasoning.append(f"Decent operating margins (avg: {avg_margin:.1%}) suggest some competitive advantage")
+            reasoning.append(f"强大而稳定的营业利润率 (平均: {avg_margin:.1%}) 表明定价权护城河")
+        elif avg_margin > 0.15:  # 至少不错的利润率
+            reasoning.append(f"不错的营业利润率 (平均: {avg_margin:.1%}) 表明具有一定的竞争优势")
         else:
-            reasoning.append(f"Low operating margins (avg: {avg_margin:.1%}) suggest limited pricing power")
+            reasoning.append(f"低营业利润率 (平均: {avg_margin:.1%}) 表明定价权有限")
 
-    # 3. Asset Efficiency and Scale Advantages
+    # 3. 资产效率和规模优势
     if len(metrics) >= 5:
-        # Check asset turnover trends (revenue efficiency)
+        # 检查资产周转率趋势（收入效率）
         asset_turnovers = []
         for m in metrics:
             if hasattr(m, 'asset_turnover') and m.asset_turnover is not None:
                 asset_turnovers.append(m.asset_turnover)
 
         if len(asset_turnovers) >= 3:
-            if any(turnover > 1.0 for turnover in asset_turnovers):  # Efficient asset use
+            if any(turnover > 1.0 for turnover in asset_turnovers):  # 高效的资产使用
                 moat_score += 1
-                reasoning.append("Efficient asset utilization suggests operational moat")
+                reasoning.append("高效的资产利用率表明运营护城河")
 
-    # 4. Competitive Position Strength (inferred from trend stability)
+    # 4. 竞争地位强度（从趋势稳定性推断）
     if len(historical_roes) >= 5 and len(historical_margins) >= 5:
-        # Calculate coefficient of variation (stability measure)
+        # 计算变异系数（稳定性度量）
         roe_avg = sum(historical_roes) / len(historical_roes)
         roe_variance = sum((roe - roe_avg) ** 2 for roe in historical_roes) / len(historical_roes)
         roe_stability = 1 - (roe_variance ** 0.5) / roe_avg if roe_avg > 0 else 0
@@ -320,11 +320,11 @@ def analyze_moat(metrics: list) -> dict[str, any]:
 
         overall_stability = (roe_stability + margin_stability) / 2
 
-        if overall_stability > 0.7:  # High stability indicates strong competitive position
+        if overall_stability > 0.7:  # 高稳定性表明强大的竞争地位
             moat_score += 1
-            reasoning.append(f"High performance stability ({overall_stability:.1%}) suggests strong competitive moat")
+            reasoning.append(f"高绩效稳定性 ({overall_stability:.1%}) 表明强大的竞争护城河")
 
-    # Cap the score at max_score
+    # 将分数限制在最高分
     moat_score = min(moat_score, max_score)
 
     return {
@@ -336,11 +336,11 @@ def analyze_moat(metrics: list) -> dict[str, any]:
 
 def analyze_management_quality(financial_line_items: list) -> dict[str, any]:
     """
-    Checks for share dilution or consistent buybacks, and some dividend track record.
-    A simplified approach:
-      - if there's net share repurchase or stable share count, it suggests management
-        might be shareholder-friendly.
-      - if there's a big new issuance, it might be a negative sign (dilution).
+    检查股份稀释或持续回购，以及一些股息记录。
+    一种简化的方法：
+      - 如果有净股份回购或稳定的股份数量，这表明管理层
+        可能是对股东友好的。
+      - 如果有大量新发行，这可能是一个负面信号（稀释）。
     """
     if not financial_line_items:
         return {"score": 0, "max_score": 2, "details": "Insufficient data for management analysis"}
@@ -351,24 +351,24 @@ def analyze_management_quality(financial_line_items: list) -> dict[str, any]:
     latest = financial_line_items[0]
     if hasattr(latest,
                "issuance_or_purchase_of_equity_shares") and latest.issuance_or_purchase_of_equity_shares and latest.issuance_or_purchase_of_equity_shares < 0:
-        # Negative means the company spent money on buybacks
+        # 负数表示公司花钱回购
         mgmt_score += 1
-        reasoning.append("Company has been repurchasing shares (shareholder-friendly)")
+        reasoning.append("公司一直在回购股票（对股东友好）")
 
     if hasattr(latest,
                "issuance_or_purchase_of_equity_shares") and latest.issuance_or_purchase_of_equity_shares and latest.issuance_or_purchase_of_equity_shares > 0:
-        # Positive issuance means new shares => possible dilution
-        reasoning.append("Recent common stock issuance (potential dilution)")
+        # 正数发行意味着新股 => 可能稀释
+        reasoning.append("最近发行了普通股（潜在稀释）")
     else:
-        reasoning.append("No significant new stock issuance detected")
+        reasoning.append("未检测到重大的新股发行")
 
-    # Check for any dividends
+    # 检查是否有任何股息
     if hasattr(latest,
                "dividends_and_other_cash_distributions") and latest.dividends_and_other_cash_distributions and latest.dividends_and_other_cash_distributions < 0:
         mgmt_score += 1
-        reasoning.append("Company has a track record of paying dividends")
+        reasoning.append("公司有支付股息的记录")
     else:
-        reasoning.append("No or minimal dividends paid")
+        reasoning.append("没有或很少支付股息")
 
     return {
         "score": mgmt_score,
@@ -379,9 +379,9 @@ def analyze_management_quality(financial_line_items: list) -> dict[str, any]:
 
 def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     """
-    Calculate owner earnings (Buffett's preferred measure of true earnings power).
-    Enhanced methodology: Net Income + Depreciation/Amortization - Maintenance CapEx - Working Capital Changes
-    Uses multi-period analysis for better maintenance capex estimation.
+    计算所有者收益（巴菲特偏爱的真实收益能力衡量标准）。
+    增强方法：净收入 + 折旧/摊销 - 维护性资本支出 - 营运资本变动
+    使用多期分析以更好地估算维护性资本支出。
     """
     if not financial_line_items or len(financial_line_items) < 2:
         return {"owner_earnings": None, "details": ["Insufficient data for owner earnings calculation"]}
@@ -389,7 +389,7 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
     latest = financial_line_items[0]
     details = []
 
-    # Core components
+    # 核心组成部分
     net_income = latest.net_income
     depreciation = latest.depreciation_and_amortization
     capex = latest.capital_expenditure
@@ -401,10 +401,10 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
         if capex is None: missing.append("capital expenditure")
         return {"owner_earnings": None, "details": [f"Missing components: {', '.join(missing)}"]}
 
-    # Enhanced maintenance capex estimation using historical analysis
+    # 使用历史分析增强维护性资本支出估算
     maintenance_capex = estimate_maintenance_capex(financial_line_items)
 
-    # Working capital change analysis (if data available)
+    # 营运资本变动分析（如果数据可用）
     working_capital_change = 0
     if len(financial_line_items) >= 2:
         try:
@@ -421,16 +421,16 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
                 working_capital_change = wc_current - wc_previous
                 details.append(f"Working capital change: ${working_capital_change:,.0f}")
         except:
-            pass  # Skip working capital adjustment if data unavailable
+            pass  # 如果数据不可用，则跳过营运资本调整
 
-    # Calculate owner earnings
+    # 计算所有者收益
     owner_earnings = net_income + depreciation - maintenance_capex - working_capital_change
 
-    # Sanity checks
-    if owner_earnings < net_income * 0.3:  # Owner earnings shouldn't be less than 30% of net income typically
+    # 合理性检查
+    if owner_earnings < net_income * 0.3:  # 所有者收益通常不应低于净收入的30%
         details.append("Warning: Owner earnings significantly below net income - high capex intensity")
 
-    if maintenance_capex > depreciation * 2:  # Maintenance capex shouldn't typically exceed 2x depreciation
+    if maintenance_capex > depreciation * 2:  # 维护性资本支出通常不应超过折旧的2倍
         details.append("Warning: Estimated maintenance capex seems high relative to depreciation")
 
     details.extend([
@@ -455,17 +455,17 @@ def calculate_owner_earnings(financial_line_items: list) -> dict[str, any]:
 
 def estimate_maintenance_capex(financial_line_items: list) -> float:
     """
-    Estimate maintenance capital expenditure using multiple approaches.
-    Buffett considers this crucial for understanding true owner earnings.
+    使用多种方法估算维护性资本支出。
+    巴菲特认为这对于理解真实的所有者收益至关重要。
     """
     if not financial_line_items:
         return 0
 
-    # Approach 1: Historical average as % of revenue
+    # 方法1：占收入的历史平均百分比
     capex_ratios = []
     depreciation_values = []
 
-    for item in financial_line_items[:5]:  # Last 5 periods
+    for item in financial_line_items[:5]:  # 最近5个时期
         if hasattr(item, 'capital_expenditure') and hasattr(item, 'revenue'):
             if item.capital_expenditure and item.revenue and item.revenue > 0:
                 capex_ratio = abs(item.capital_expenditure) / item.revenue
@@ -474,46 +474,46 @@ def estimate_maintenance_capex(financial_line_items: list) -> float:
         if hasattr(item, 'depreciation_and_amortization') and item.depreciation_and_amortization:
             depreciation_values.append(item.depreciation_and_amortization)
 
-    # Approach 2: Percentage of depreciation (typically 80-120% for maintenance)
+    # 方法2：折旧的百分比（通常为维护的80-120%）
     latest_depreciation = financial_line_items[0].depreciation_and_amortization if financial_line_items[
         0].depreciation_and_amortization else 0
 
-    # Approach 3: Industry-specific heuristics
+    # 方法3：行业特定的启发式方法
     latest_capex = abs(financial_line_items[0].capital_expenditure) if financial_line_items[
         0].capital_expenditure else 0
 
-    # Conservative estimate: Use the higher of:
-    # 1. 85% of total capex (assuming 15% is growth capex)
-    # 2. 100% of depreciation (replacement of worn-out assets)
-    # 3. Historical average if stable
+    # 保守估计：使用以下各项中的较高者：
+    # 1. 总资本支出的85%（假设15%是增长性资本支出）
+    # 2. 折旧的100%（更换磨损资产）
+    # 3. 如果稳定，则为历史平均值
 
-    method_1 = latest_capex * 0.85  # 85% of total capex
-    method_2 = latest_depreciation  # 100% of depreciation
+    method_1 = latest_capex * 0.85  # 总资本支出的85%
+    method_2 = latest_depreciation  # 折旧的100%
 
-    # If we have historical data, use average capex ratio
+    # 如果我们有历史数据，则使用平均资本支出比率
     if len(capex_ratios) >= 3:
         avg_capex_ratio = sum(capex_ratios) / len(capex_ratios)
         latest_revenue = financial_line_items[0].revenue if hasattr(financial_line_items[0], 'revenue') and \
                                                             financial_line_items[0].revenue else 0
         method_3 = avg_capex_ratio * latest_revenue if latest_revenue else 0
 
-        # Use the median of the three approaches for conservatism
+        # 为保守起见，使用三种方法的中位数
         estimates = sorted([method_1, method_2, method_3])
-        return estimates[1]  # Median
+        return estimates[1]  # 中位数
     else:
-        # Use the higher of method 1 and 2
+        # 使用方法1和方法2中较高者
         return max(method_1, method_2)
 
 
 def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
     """
-    Calculate intrinsic value using enhanced DCF with owner earnings.
-    Uses more sophisticated assumptions and conservative approach like Buffett.
+    使用增强的DCF和所有者收益计算内在价值。
+    使用更复杂的假设和像巴菲特一样的保守方法。
     """
     if not financial_line_items or len(financial_line_items) < 3:
         return {"intrinsic_value": None, "details": ["Insufficient data for reliable valuation"]}
 
-    # Calculate owner earnings with better methodology
+    # 使用更好的方法计算所有者收益
     earnings_data = calculate_owner_earnings(financial_line_items)
     if not earnings_data["owner_earnings"]:
         return {"intrinsic_value": None, "details": earnings_data["details"]}
@@ -525,16 +525,16 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
     if not shares_outstanding or shares_outstanding <= 0:
         return {"intrinsic_value": None, "details": ["Missing or invalid shares outstanding data"]}
 
-    # Enhanced DCF with more realistic assumptions
+    # 具有更现实假设的增强型DCF
     details = []
 
-    # Estimate growth rate based on historical performance (more conservative)
+    # 根据历史表现估算增长率（更保守）
     historical_earnings = []
-    for item in financial_line_items[:5]:  # Last 5 years
+    for item in financial_line_items[:5]:  # 最近5年
         if hasattr(item, 'net_income') and item.net_income:
             historical_earnings.append(item.net_income)
 
-    # Calculate historical growth rate
+    # 计算历史增长率
     if len(historical_earnings) >= 3:
         oldest_earnings = historical_earnings[-1]
         latest_earnings = historical_earnings[0]
@@ -542,42 +542,42 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
 
         if oldest_earnings > 0:
             historical_growth = ((latest_earnings / oldest_earnings) ** (1 / years)) - 1
-            # Conservative adjustment - cap growth and apply haircut
-            historical_growth = max(-0.05, min(historical_growth, 0.15))  # Cap between -5% and 15%
-            conservative_growth = historical_growth * 0.7  # Apply 30% haircut for conservatism
+            # 保守调整 - 限制增长并进行折减
+            historical_growth = max(-0.05, min(historical_growth, 0.15))  # 限制在-5%和15%之间
+            conservative_growth = historical_growth * 0.7  # 为保守起见，应用30%的折减
         else:
-            conservative_growth = 0.03  # Default 3% if negative base
+            conservative_growth = 0.03  # 如果基数为负，则默认为3%
     else:
-        conservative_growth = 0.03  # Default conservative growth
+        conservative_growth = 0.03  # 默认保守增长
 
-    # Buffett's conservative assumptions
-    stage1_growth = min(conservative_growth, 0.08)  # Stage 1: cap at 8%
-    stage2_growth = min(conservative_growth * 0.5, 0.04)  # Stage 2: half of stage 1, cap at 4%
-    terminal_growth = 0.025  # Long-term GDP growth rate
+    # 巴菲特的保守假设
+    stage1_growth = min(conservative_growth, 0.08)  # 阶段1：上限为8%
+    stage2_growth = min(conservative_growth * 0.5, 0.04)  # 阶段2：阶段1的一半，上限为4%
+    terminal_growth = 0.025  # 长期GDP增长率
 
-    # Risk-adjusted discount rate based on business quality
-    base_discount_rate = 0.09  # Base 9%
+    # 基于业务质量的风险调整贴现率
+    base_discount_rate = 0.09  # 基准9%
 
-    # Adjust based on analysis scores (if available in calling context)
-    # For now, use conservative 10%
+    # 根据分析分数进行调整（如果在调用上下文中可用）
+    # 目前，使用保守的10%
     discount_rate = 0.10
 
-    # Three-stage DCF model
-    stage1_years = 5  # High growth phase
-    stage2_years = 5  # Transition phase
+    # 三阶段DCF模型
+    stage1_years = 5  # 高增长阶段
+    stage2_years = 5  # 过渡阶段
 
     present_value = 0
     details.append(
-        f"Using three-stage DCF: Stage 1 ({stage1_growth:.1%}, {stage1_years}y), Stage 2 ({stage2_growth:.1%}, {stage2_years}y), Terminal ({terminal_growth:.1%})")
+        f"使用三阶段DCF：阶段1 ({stage1_growth:.1%}, {stage1_years}年), 阶段2 ({stage2_growth:.1%}, {stage2_years}年), 永续期 ({terminal_growth:.1%})")
 
-    # Stage 1: Higher growth
+    # 阶段1：较高增长
     stage1_pv = 0
     for year in range(1, stage1_years + 1):
         future_earnings = owner_earnings * (1 + stage1_growth) ** year
         pv = future_earnings / (1 + discount_rate) ** year
         stage1_pv += pv
 
-    # Stage 2: Transition growth
+    # 阶段2：过渡增长
     stage2_pv = 0
     stage1_final_earnings = owner_earnings * (1 + stage1_growth) ** stage1_years
     for year in range(1, stage2_years + 1):
@@ -585,17 +585,17 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
         pv = future_earnings / (1 + discount_rate) ** (stage1_years + year)
         stage2_pv += pv
 
-    # Terminal value using Gordon Growth Model
+    # 使用戈登增长模型计算终值
     final_earnings = stage1_final_earnings * (1 + stage2_growth) ** stage2_years
     terminal_earnings = final_earnings * (1 + terminal_growth)
     terminal_value = terminal_earnings / (discount_rate - terminal_growth)
     terminal_pv = terminal_value / (1 + discount_rate) ** (stage1_years + stage2_years)
 
-    # Total intrinsic value
+    # 总内在价值
     intrinsic_value = stage1_pv + stage2_pv + terminal_pv
 
-    # Apply additional margin of safety (Buffett's conservatism)
-    conservative_intrinsic_value = intrinsic_value * 0.85  # 15% additional haircut
+    # 应用额外的安全边际（巴菲特的保守主义）
+    conservative_intrinsic_value = intrinsic_value * 0.85  # 额外的15%折减
 
     details.extend([
         f"Stage 1 PV: ${stage1_pv:,.0f}",
@@ -625,11 +625,11 @@ def calculate_intrinsic_value(financial_line_items: list) -> dict[str, any]:
 
 
 def analyze_book_value_growth(financial_line_items: list) -> dict[str, any]:
-    """Analyze book value per share growth - a key Buffett metric."""
+    """分析每股账面价值增长 - 巴菲特的一个关键指标。"""
     if len(financial_line_items) < 3:
         return {"score": 0, "details": "Insufficient data for book value analysis"}
 
-    # Extract book values per share
+    # 提取每股账面价值
     book_values = [
         item.shareholders_equity / item.outstanding_shares
         for item in financial_line_items
@@ -643,24 +643,24 @@ def analyze_book_value_growth(financial_line_items: list) -> dict[str, any]:
     score = 0
     reasoning = []
 
-    # Analyze growth consistency
+    # 分析增长一致性
     growth_periods = sum(1 for i in range(len(book_values) - 1) if book_values[i] > book_values[i + 1])
     growth_rate = growth_periods / (len(book_values) - 1)
 
-    # Score based on consistency
+    # 根据一致性评分
     if growth_rate >= 0.8:
         score += 3
-        reasoning.append("Consistent book value per share growth (Buffett's favorite metric)")
+        reasoning.append("持续的每股账面价值增长（巴菲特最喜欢的指标）")
     elif growth_rate >= 0.6:
         score += 2
-        reasoning.append("Good book value per share growth pattern")
+        reasoning.append("良好的每股账面价值增长模式")
     elif growth_rate >= 0.4:
         score += 1
-        reasoning.append("Moderate book value per share growth")
+        reasoning.append("中等的每股账面价值增长")
     else:
-        reasoning.append("Inconsistent book value per share growth")
+        reasoning.append("不一致的每股账面价值增长")
 
-    # Calculate and score CAGR
+    # 计算并评分CAGR
     cagr_score, cagr_reason = _calculate_book_value_cagr(book_values)
     score += cagr_score
     reasoning.append(cagr_reason)
@@ -669,34 +669,34 @@ def analyze_book_value_growth(financial_line_items: list) -> dict[str, any]:
 
 
 def _calculate_book_value_cagr(book_values: list) -> tuple[int, str]:
-    """Helper function to safely calculate book value CAGR and return score + reasoning."""
+    """辅助函数，用于安全地计算账面价值的复合年增长率（CAGR）并返回分数和理由。"""
     if len(book_values) < 2:
-        return 0, "Insufficient data for CAGR calculation"
+        return 0, "计算CAGR数据不足"
 
     oldest_bv, latest_bv = book_values[-1], book_values[0]
     years = len(book_values) - 1
 
-    # Handle different scenarios
+    # 处理不同情况
     if oldest_bv > 0 and latest_bv > 0:
         cagr = ((latest_bv / oldest_bv) ** (1 / years)) - 1
         if cagr > 0.15:
-            return 2, f"Excellent book value CAGR: {cagr:.1%}"
+            return 2, f"优秀的账面价值CAGR: {cagr:.1%}"
         elif cagr > 0.1:
-            return 1, f"Good book value CAGR: {cagr:.1%}"
+            return 1, f"良好的账面价值CAGR: {cagr:.1%}"
         else:
-            return 0, f"Book value CAGR: {cagr:.1%}"
+            return 0, f"账面价值CAGR: {cagr:.1%}"
     elif oldest_bv < 0 < latest_bv:
-        return 3, "Excellent: Company improved from negative to positive book value"
+        return 3, "优秀：公司账面价值从负转正"
     elif oldest_bv > 0 > latest_bv:
-        return 0, "Warning: Company declined from positive to negative book value"
+        return 0, "警告：公司账面价值从正转负"
     else:
-        return 0, "Unable to calculate meaningful book value CAGR due to negative values"
+        return 0, "由于存在负值，无法计算有意义的账面价值CAGR"
 
 
 def analyze_pricing_power(financial_line_items: list, metrics: list) -> dict[str, any]:
     """
-    Analyze pricing power - Buffett's key indicator of a business moat.
-    Looks at ability to raise prices without losing customers (margin expansion during inflation).
+    分析定价能力 - 巴菲特衡量护城河的关键指标。
+    考察在不流失客户的情况下提高价格的能力（通货膨胀期间的利润率扩张）。
     """
     if not financial_line_items or not metrics:
         return {"score": 0, "details": "Insufficient data for pricing power analysis"}
@@ -704,36 +704,36 @@ def analyze_pricing_power(financial_line_items: list, metrics: list) -> dict[str
     score = 0
     reasoning = []
 
-    # Check gross margin trends (ability to maintain/expand margins)
+    # 检查毛利率趋势（维持/扩大毛利率的能力）
     gross_margins = []
     for item in financial_line_items:
         if hasattr(item, 'gross_margin') and item.gross_margin is not None:
             gross_margins.append(item.gross_margin)
 
     if len(gross_margins) >= 3:
-        # Check margin stability/improvement
+        # 检查利润率的稳定性/改善情况
         recent_avg = sum(gross_margins[:2]) / 2 if len(gross_margins) >= 2 else gross_margins[0]
         older_avg = sum(gross_margins[-2:]) / 2 if len(gross_margins) >= 2 else gross_margins[-1]
 
-        if recent_avg > older_avg + 0.02:  # 2%+ improvement
+        if recent_avg > older_avg + 0.02:  # 2%以上的改善
             score += 3
             reasoning.append("Expanding gross margins indicate strong pricing power")
         elif recent_avg > older_avg:
             score += 2
             reasoning.append("Improving gross margins suggest good pricing power")
-        elif abs(recent_avg - older_avg) < 0.01:  # Stable within 1%
+        elif abs(recent_avg - older_avg) < 0.01:  # 稳定在1%以内
             score += 1
             reasoning.append("Stable gross margins during economic uncertainty")
         else:
             reasoning.append("Declining gross margins may indicate pricing pressure")
 
-    # Check if company has been able to maintain high margins consistently
+    # 检查公司是否能够持续保持高利润率
     if gross_margins:
         avg_margin = sum(gross_margins) / len(gross_margins)
-        if avg_margin > 0.5:  # 50%+ gross margins
+        if avg_margin > 0.5:  # 50%以上的毛利率
             score += 2
             reasoning.append(f"Consistently high gross margins ({avg_margin:.1%}) indicate strong pricing power")
-        elif avg_margin > 0.3:  # 30%+ gross margins
+        elif avg_margin > 0.3:  # 30%以上的毛利率
             score += 1
             reasoning.append(f"Good gross margins ({avg_margin:.1%}) suggest decent pricing power")
 
@@ -749,9 +749,9 @@ def generate_buffett_output(
         state: AgentState,
         agent_id: str = "warren_buffett_agent",
 ) -> WarrenBuffettSignal:
-    """Get investment decision from LLM with a compact prompt."""
+    """使用紧凑的提示从LLM获取投资决策。"""
 
-    # --- Build compact facts here ---
+    # --- 在此构建紧凑的事实 ---
     facts = {
         "score": analysis_data.get("score"),
         "max_score": analysis_data.get("max_score"),
@@ -770,52 +770,52 @@ def generate_buffett_output(
         [
             (
                 "system",
-                "You are Warren Buffett. Decide bullish, bearish, or neutral using only the provided facts.\n"
+                "你是沃伦·巴菲特。仅使用提供的事实来决定看涨、看跌或中性。\n"
                 "\n"
-                "Checklist for decision:\n"
-                "- Circle of competence\n"
-                "- Competitive moat\n"
-                "- Management quality\n"
-                "- Financial strength\n"
-                "- Valuation vs intrinsic value\n"
-                "- Long-term prospects\n"
+                "决策清单：\n"
+                "- 能力圈\n"
+                "- 竞争护城河\n"
+                "- 管理质量\n"
+                "- 财务实力\n"
+                "- 估值与内在价值\n"
+                "- 长期前景\n"
                 "\n"
-                "Signal rules:\n"
-                "- Bullish: strong business AND margin_of_safety > 0.\n"
-                "- Bearish: poor business OR clearly overvalued.\n"
-                "- Neutral: good business but margin_of_safety <= 0, or mixed evidence.\n"
+                "信号规则：\n"
+                "- 看涨：强大的业务 AND 安全边际 > 0。\n"
+                "- 看跌：业务不佳 OR 明显高估。\n"
+                "- 中性：业务良好但安全边际 <= 0，或证据混杂。\n"
                 "\n"
-                "Confidence scale:\n"
-                "- 90-100%: Exceptional business within my circle, trading at attractive price\n"
-                "- 70-89%: Good business with decent moat, fair valuation\n"
-                "- 50-69%: Mixed signals, would need more information or better price\n"
-                "- 30-49%: Outside my expertise or concerning fundamentals\n"
-                "- 10-29%: Poor business or significantly overvalued\n"
+                "置信度等级：\n"
+                "- 90-100%：我圈子里的优秀企业，交易价格诱人\n"
+                "- 70-89%：具有良好护城河的优秀企业，估值合理\n"
+                "- 50-69%：信号混杂，需要更多信息或更好的价格\n"
+                "- 30-49%：超出我的专业范围或基本面令人担忧\n"
+                "- 10-29%：业务不佳或被严重高估\n"
                 "\n"
-                "Keep reasoning under 120 characters. Do not invent data. Return JSON only."
+                "将理由保持在120个字符以内。不要捏造数据。只返回JSON。"
             ),
             (
                 "human",
-                "Ticker: {ticker}\n"
-                "Facts:\n{facts}\n\n"
-                "Return exactly:\n"
+                "股票代码: {ticker}\n"
+                "事实:\n{facts}\n\n"
+                "请严格返回:\n"
                 "{{\n"
                 '  "signal": "bullish" | "bearish" | "neutral",\n'
                 '  "confidence": int,\n'
-                '  "reasoning": "short justification"\n'
+                '  "reasoning": "简短的理由"\n'
                 "}}"
             ),
         ]
     )
 
     prompt = template.invoke({
-        "facts": json.dumps(facts, separators=(",", ":"), ensure_ascii=False),
+        "facts": json.dumps(facts, separators=( ",", ":"), ensure_ascii=False),
         "ticker": ticker,
     })
 
-    # Default fallback uses int confidence to match schema and avoid parse retries
+    # 默认回退使用整数置信度以匹配模式并避免解析重试
     def create_default_warren_buffett_signal():
-        return WarrenBuffettSignal(signal="neutral", confidence=50, reasoning="Insufficient data")
+        return WarrenBuffettSignal(signal="neutral", confidence=50, reasoning="数据不足")
 
     return call_llm(
         prompt=prompt,

@@ -20,18 +20,18 @@ from src.utils.progress import progress
 
 class AswathDamodaranSignal(BaseModel):
     signal: Literal["bullish", "bearish", "neutral"]
-    confidence: float          # 0‒100
+    confidence: float          # 0-100
     reasoning: str
 
 
 def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_agent"):
     """
-    Analyze US equities through Aswath Damodaran's intrinsic-value lens:
-      • Cost of Equity via CAPM (risk-free + β·ERP)
-      • 5-yr revenue / FCFF growth trends & reinvestment efficiency
-      • FCFF-to-Firm DCF → equity value → per-share intrinsic value
-      • Cross-check with relative valuation (PE vs. Fwd PE sector median proxy)
-    Produces a trading signal and explanation in Damodaran's analytical voice.
+    通过Aswath Damodaran的内在价值视角分析美国股票：
+      • 通过CAPM计算股权成本（无风险利率 + β·ERP）
+      • 5年收入/自由现金流增长趋势和再投资效率
+      • 公司自由现金流DCF → 股权价值 → 每股内在价值
+      • 与相对估值进行交叉检验（市盈率 vs. 远期市盈率行业中位数代理）
+    以Damodaran的分析口吻生成交易信号和解释。
     """
     data      = state["data"]
     end_date  = data["end_date"]
@@ -42,7 +42,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
     damodaran_signals: dict[str, dict] = {}
 
     for ticker in tickers:
-        # ─── Fetch core data ────────────────────────────────────────────────────
+        # ─── 获取核心数据 ────────────────────────────────────────────────────
         progress.update_status(agent_id, ticker, "Fetching financial metrics")
         metrics = get_financial_metrics(ticker, end_date, period="ttm", limit=5, api_key=api_key)
 
@@ -66,7 +66,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         progress.update_status(agent_id, ticker, "Getting market cap")
         market_cap = get_market_cap(ticker, end_date, api_key=api_key)
 
-        # ─── Analyses ───────────────────────────────────────────────────────────
+        # ─── 分析 ───────────────────────────────────────────────────────────
         progress.update_status(agent_id, ticker, "Analyzing growth and reinvestment")
         growth_analysis = analyze_growth_and_reinvestment(metrics, line_items)
 
@@ -79,7 +79,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
         progress.update_status(agent_id, ticker, "Assessing relative valuation")
         relative_val_analysis = analyze_relative_valuation(metrics)
 
-        # ─── Score & margin of safety ──────────────────────────────────────────
+        # ─── 评分和安全边际 ──────────────────────────────────────────
         total_score = (
             growth_analysis["score"]
             + risk_analysis["score"]
@@ -92,7 +92,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             (intrinsic_value - market_cap) / market_cap if intrinsic_value and market_cap else None
         )
 
-        # Decision rules (Damodaran tends to act with ~20-25 % MOS)
+        # 决策规则 (Damodaran倾向于在约20-25%的安全边际时采取行动)
         if margin_of_safety is not None and margin_of_safety >= 0.25:
             signal = "bullish"
         elif margin_of_safety is not None and margin_of_safety <= -0.25:
@@ -112,7 +112,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
             "market_cap": market_cap,
         }
 
-        # ─── LLM: craft Damodaran-style narrative ──────────────────────────────
+        # ─── LLM: 构建Damodaran风格的叙述 ──────────────────────────────
         progress.update_status(agent_id, ticker, "Generating Damodaran analysis")
         damodaran_output = generate_damodaran_output(
             ticker=ticker,
@@ -125,7 +125,7 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
 
         progress.update_status(agent_id, ticker, "Done", analysis=damodaran_output.reasoning)
 
-    # ─── Push message back to graph state ──────────────────────────────────────
+    # ─── 将消息推送回图状态 ──────────────────────────────────────
     message = HumanMessage(content=json.dumps(damodaran_signals), name=agent_id)
 
     if state["metadata"]["show_reasoning"]:
@@ -138,21 +138,21 @@ def aswath_damodaran_agent(state: AgentState, agent_id: str = "aswath_damodaran_
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Helper analyses
+# 辅助分析
 # ────────────────────────────────────────────────────────────────────────────────
 def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str, any]:
     """
-    Growth score (0-4):
-      +2  5-yr CAGR of revenue > 8 %
-      +1  5-yr CAGR of revenue > 3 %
-      +1  Positive FCFF growth over 5 yr
-    Reinvestment efficiency (ROIC > WACC) adds +1
+    增长分数 (0-4):
+      +2  5年收入复合年增长率 > 8 %
+      +1  5年收入复合年增长率 > 3 %
+      +1  5年内自由现金流正增长
+    再投资效率 (ROIC > WACC) 加1分
     """
     max_score = 4
     if len(metrics) < 2:
         return {"score": 0, "max_score": max_score, "details": "Insufficient history"}
 
-    # Revenue CAGR (oldest to latest)
+    # 收入复合年增长率 (从最旧到最新)
     revs = [m.revenue for m in reversed(metrics) if hasattr(m, "revenue") and m.revenue]
     if len(revs) >= 2 and revs[0] > 0:
         cagr = (revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1
@@ -173,7 +173,7 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
     else:
         details.append("Revenue data incomplete")
 
-    # FCFF growth (proxy: free_cash_flow trend)
+    # 自由现金流增长 (代理: free_cash_flow趋势)
     fcfs = [li.free_cash_flow for li in reversed(line_items) if li.free_cash_flow]
     if len(fcfs) >= 2 and fcfs[-1] > fcfs[0]:
         score += 1
@@ -181,7 +181,7 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
     else:
         details.append("Flat or declining FCFF")
 
-    # Reinvestment efficiency (ROIC vs. 10 % hurdle)
+    # 再投资效率 (ROIC vs. 10 % 门槛)
     latest = metrics[0]
     if latest.return_on_invested_capital and latest.return_on_invested_capital > 0.10:
         score += 1
@@ -192,10 +192,10 @@ def analyze_growth_and_reinvestment(metrics: list, line_items: list) -> dict[str
 
 def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     """
-    Risk score (0-3):
+    风险分数 (0-3):
       +1  Beta < 1.3
-      +1  Debt/Equity < 1
-      +1  Interest Coverage > 3×
+      +1  负债/权益比 < 1
+      +1  利息保障倍数 > 3×
     """
     max_score = 3
     if not metrics:
@@ -204,7 +204,7 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     latest = metrics[0]
     score, details = 0, []
 
-    # Beta
+    # Beta系数
     beta = getattr(latest, "beta", None)
     if beta is not None:
         if beta < 1.3:
@@ -215,7 +215,7 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     else:
         details.append("Beta NA")
 
-    # Debt / Equity
+    # 负债/权益比
     dte = getattr(latest, "debt_to_equity", None)
     if dte is not None:
         if dte < 1:
@@ -226,7 +226,7 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     else:
         details.append("D/E NA")
 
-    # Interest coverage
+    # 利息保障倍数
     ebit = getattr(latest, "ebit", None)
     interest = getattr(latest, "interest_expense", None)
     if ebit and interest and interest != 0:
@@ -239,7 +239,7 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
     else:
         details.append("Interest coverage NA")
 
-    # Compute cost of equity for later use
+    # 计算股权成本以备后用
     cost_of_equity = estimate_cost_of_equity(beta)
 
     return {
@@ -253,10 +253,10 @@ def analyze_risk_profile(metrics: list, line_items: list) -> dict[str, any]:
 
 def analyze_relative_valuation(metrics: list) -> dict[str, any]:
     """
-    Simple PE check vs. historical median (proxy since sector comps unavailable):
-      +1 if TTM P/E < 70 % of 5-yr median
-      +0 if between 70 %-130 %
-      ‑1 if >130 %
+    简单的市盈率检查与历史中位数对比 (由于缺少行业可比数据，使用代理):
+      +1 如果 TTM P/E < 5年市盈率中位数的 70 %
+      +0 如果在 70 %-130 % 之间
+      ‑1 如果 >130 %
     """
     max_score = 1
     if not metrics or len(metrics) < 5:
@@ -280,15 +280,15 @@ def analyze_relative_valuation(metrics: list) -> dict[str, any]:
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# Intrinsic value via FCFF DCF (Damodaran style)
+# 通过FCFF DCF计算内在价值 (Damodaran风格)
 # ────────────────────────────────────────────────────────────────────────────────
 def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis: dict) -> dict[str, any]:
     """
-    FCFF DCF with:
-      • Base FCFF = latest free cash flow
-      • Growth = 5-yr revenue CAGR (capped 12 %)
-      • Fade linearly to terminal growth 2.5 % by year 10
-      • Discount @ cost of equity (no debt split given data limitations)
+    FCFF DCF模型参数:
+      • 基础FCFF = 最近的自由现金流
+      • 增长率 = 5年收入复合年增长率 (上限 12 %)
+      • 到第10年线性递减至2.5%的永续增长率
+      • 折现率 @ 股权成本 (由于数据限制，不区分债务)
     """
     if not metrics or len(metrics) < 2 or not line_items:
         return {"intrinsic_value": None, "details": ["Insufficient data"]}
@@ -299,20 +299,20 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
     if not fcff0 or not shares:
         return {"intrinsic_value": None, "details": ["Missing FCFF or share count"]}
 
-    # Growth assumptions
+    # 增长假设
     revs = [m.revenue for m in reversed(metrics) if m.revenue]
     if len(revs) >= 2 and revs[0] > 0:
         base_growth = min((revs[-1] / revs[0]) ** (1 / (len(revs) - 1)) - 1, 0.12)
     else:
-        base_growth = 0.04  # fallback
+        base_growth = 0.04  # 后备值
 
     terminal_growth = 0.025
     years = 10
 
-    # Discount rate
+    # 折现率
     discount = risk_analysis.get("cost_of_equity") or 0.09
 
-    # Project FCFF and discount
+    # 预测FCFF并折现
     pv_sum = 0.0
     g = base_growth
     g_step = (terminal_growth - base_growth) / (years - 1)
@@ -322,7 +322,7 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
         pv_sum += pv
         g += g_step
 
-    # Terminal value (perpetuity with terminal growth)
+    # 终值 (永续增长模型)
     tv = (
         fcff0
         * (1 + terminal_growth)
@@ -348,15 +348,15 @@ def calculate_intrinsic_value_dcf(metrics: list, line_items: list, risk_analysis
 
 
 def estimate_cost_of_equity(beta: float | None) -> float:
-    """CAPM: r_e = r_f + β × ERP (use Damodaran's long-term averages)."""
-    risk_free = 0.04          # 10-yr US Treasury proxy
-    erp = 0.05                # long-run US equity risk premium
+    """CAPM: r_e = r_f + β × ERP (使用Damodaran的长期平均值)."""
+    risk_free = 0.04          # 10年期美国国债代理
+    erp = 0.05                # 长期美国股权风险溢价
     beta = beta if beta is not None else 1.0
     return risk_free + beta * erp
 
 
 # ────────────────────────────────────────────────────────────────────────────────
-# LLM generation
+# LLM生成
 # ────────────────────────────────────────────────────────────────────────────────
 def generate_damodaran_output(
     ticker: str,
@@ -365,33 +365,33 @@ def generate_damodaran_output(
     agent_id: str,
 ) -> AswathDamodaranSignal:
     """
-    Ask the LLM to channel Prof. Damodaran's analytical style:
-      • Story → Numbers → Value narrative
-      • Emphasize risk, growth, and cash-flow assumptions
-      • Cite cost of capital, implied MOS, and valuation cross-checks
+    要求LLM模仿Damodaran教授的分析风格:
+      • 故事 → 数字 → 价值叙述
+      • 强调风险、增长和现金流假设
+      • 引用资本成本、隐含的安全边际和估值交叉检验
     """
     template = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                """You are Aswath Damodaran, Professor of Finance at NYU Stern.
-                Use your valuation framework to issue trading signals on US equities.
+                """你（指LLM）是纽约大学斯特恩商学院的金融学教授Aswath Damodaran。
+                使用你的估值框架的美国股票发布交易信号。
 
-                Speak with your usual clear, data-driven tone:
-                  ◦ Start with the company "story" (qualitatively)
-                  ◦ Connect that story to key numerical drivers: revenue growth, margins, reinvestment, risk
-                  ◦ Conclude with value: your FCFF DCF estimate, margin of safety, and relative valuation sanity checks
-                  ◦ Highlight major uncertainties and how they affect value
-                Return ONLY the JSON specified below.""",
+                请用你一贯清晰、数据驱动的口吻说话：
+                  ◦ 从公司“故事”（定性）开始
+                  ◦ 将该故事与关键数字驱动因素联系起来：收入增长、利润率、再投资、风险
+                  ◦ 最后总结价值：你的FCFF DCF估算、安全边际和相对估值的合理性检查
+                  ◦ 强调主要的不确定性及其如何影响价值
+                只返回下面指定的JSON。""",
             ),
             (
                 "human",
-                """Ticker: {ticker}
+                """股票代码: {ticker}
 
-                Analysis data:
+                分析数据:
                 {analysis_data}
 
-                Respond EXACTLY in this JSON schema:
+                请严格按照此JSON模式回应:
                 {{
                   "signal": "bullish" | "bearish" | "neutral",
                   "confidence": float (0-100),
@@ -407,7 +407,7 @@ def generate_damodaran_output(
         return AswathDamodaranSignal(
             signal="neutral",
             confidence=0.0,
-            reasoning="Parsing error; defaulting to neutral",
+            reasoning="解析错误；默认为中性",
         )
 
     return call_llm(

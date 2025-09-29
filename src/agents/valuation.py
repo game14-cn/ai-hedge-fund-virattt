@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-"""Valuation Agent
+"""估值代理
 
-Implements four complementary valuation methodologies and aggregates them with
-configurable weights. 
+实现四种互为补充的估值方法，并按可配置的权重进行聚合。
 """
 
 import json
@@ -19,7 +18,7 @@ from src.tools.api import (
 )
 
 def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analyst_agent"):
-    """Run valuation across tickers and write signals back to `state`."""
+    """对一组股票代码执行估值，并将信号写回到 `state`。"""
 
     data = state["data"]
     end_date = data["end_date"]
@@ -30,7 +29,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
     for ticker in tickers:
         progress.update_status(agent_id, ticker, "Fetching financial data")
 
-        # --- Historical financial metrics ---
+        # --- 历史财务指标 ---
         financial_metrics = get_financial_metrics(
             ticker=ticker,
             end_date=end_date,
@@ -43,7 +42,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             continue
         most_recent_metrics = financial_metrics[0]
 
-        # --- Enhanced line‑items ---
+        # --- 增强的科目行 ---
         progress.update_status(agent_id, ticker, "Gathering comprehensive line items")
         line_items = search_line_items(
             ticker=ticker,
@@ -72,15 +71,15 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         li_curr, li_prev = line_items[0], line_items[1]
 
         # ------------------------------------------------------------------
-        # Valuation models
+        # 估值模型
         # ------------------------------------------------------------------
-        # Handle potential None values for working capital
+        # 处理营运资本可能为 None 的情况
         if li_curr.working_capital is not None and li_prev.working_capital is not None:
             wc_change = li_curr.working_capital - li_prev.working_capital
         else:
-            wc_change = 0  # Default to 0 if working capital data is unavailable
+            wc_change = 0  # 如果营运资本数据不可用，则默认为 0
 
-        # Owner Earnings
+        # 所有者收益
         owner_val = calculate_owner_earnings_value(
             net_income=li_curr.net_income,
             depreciation=li_curr.depreciation_and_amortization,
@@ -89,10 +88,10 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             growth_rate=most_recent_metrics.earnings_growth or 0.05,
         )
 
-        # Enhanced Discounted Cash Flow with WACC and scenarios
+        # 增强的贴现现金流（DCF），结合 WACC 与情景分析
         progress.update_status(agent_id, ticker, "Calculating WACC and enhanced DCF")
         
-        # Calculate WACC
+        # 计算 WACC
         wacc = calculate_wacc(
             market_cap=most_recent_metrics.market_cap or 0,
             total_debt=getattr(li_curr, 'total_debt', None),
@@ -101,13 +100,13 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
             debt_to_equity=most_recent_metrics.debt_to_equity,
         )
         
-        # Prepare FCF history for enhanced DCF
+        # 为增强版 DCF 准备 FCF 历史数据
         fcf_history = []
         for li in line_items:
             if hasattr(li, 'free_cash_flow') and li.free_cash_flow is not None:
                 fcf_history.append(li.free_cash_flow)
         
-        # Enhanced DCF with scenarios
+        # 增强版 DCF 的情景分析
         dcf_results = calculate_dcf_scenarios(
             fcf_history=fcf_history,
             growth_metrics={
@@ -122,10 +121,10 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         
         dcf_val = dcf_results['expected_value']
 
-        # Implied Equity Value
+        # 隐含股权价值
         ev_ebitda_val = calculate_ev_ebitda_value(financial_metrics)
 
-        # Residual Income Model
+        # 剩余收益模型
         rim_val = calculate_residual_income_value(
             market_cap=most_recent_metrics.market_cap,
             net_income=li_curr.net_income,
@@ -134,7 +133,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         )
 
         # ------------------------------------------------------------------
-        # Aggregate & signal
+        # 聚合与信号
         # ------------------------------------------------------------------
         market_cap = get_market_cap(ticker, end_date, api_key=api_key)
         if not market_cap:
@@ -163,7 +162,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         signal = "bullish" if weighted_gap > 0.15 else "bearish" if weighted_gap < -0.15 else "neutral"
         confidence = round(min(abs(weighted_gap) / 0.30 * 100, 100))
 
-        # Enhanced reasoning with DCF scenario details
+        # 结合 DCF 情景分析的增强版推理细节
         reasoning = {}
         for m, vals in method_values.items():
             if vals["value"] > 0:
@@ -172,7 +171,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                     f"Gap: {vals['gap']:.1%}, Weight: {vals['weight']*100:.0f}%"
                 )
                 
-                # Add enhanced DCF details
+                # 添加增强的 DCF 细节
                 if m == "dcf" and 'dcf_results' in locals():
                     enhanced_details = (
                         f"{base_details}\n"
@@ -190,7 +189,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
                     "details": enhanced_details,
                 }
         
-        # Add overall DCF scenario summary if available
+        # 如果可用，添加整体 DCF 情景摘要
         if 'dcf_results' in locals():
             reasoning["dcf_scenario_analysis"] = {
                 "bear_case": f"${dcf_results['downside']:,.2f}",
@@ -207,12 +206,12 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
         }
         progress.update_status(agent_id, ticker, "Done", analysis=json.dumps(reasoning, indent=4))
 
-    # ---- Emit message (for LLM tool chain) ----
+    # ---- 发送消息（用于 LLM 工具链）----
     msg = HumanMessage(content=json.dumps(valuation_analysis), name=agent_id)
     if state["metadata"].get("show_reasoning"):
         show_agent_reasoning(valuation_analysis, "Valuation Analysis Agent")
 
-    # Add the signal to the analyst_signals list
+    # 将信号添加到 analyst_signals 列表中
     state["data"]["analyst_signals"][agent_id] = valuation_analysis
 
     progress.update_status(agent_id, None, "Done")
@@ -220,7 +219,7 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
     return {"messages": [msg], "data": data}
 
 #############################
-# Helper Valuation Functions
+# 辅助估值函数
 #############################
 
 def calculate_owner_earnings_value(
@@ -233,7 +232,7 @@ def calculate_owner_earnings_value(
     margin_of_safety: float = 0.25,
     num_years: int = 5,
 ) -> float:
-    """Buffett owner‑earnings valuation with margin‑of‑safety."""
+    """巴菲特“所有者收益”估值，并应用安全边际。"""
     if not all(isinstance(x, (int, float)) for x in [net_income, depreciation, capex, working_capital_change]):
         return 0
 
@@ -263,7 +262,7 @@ def calculate_intrinsic_value(
     terminal_growth_rate: float = 0.02,
     num_years: int = 5,
 ) -> float:
-    """Classic DCF on FCF with constant growth and terminal value."""
+    """传统DCF：对自由现金流进行恒定增长与终值估值。"""
     if free_cash_flow is None or free_cash_flow <= 0:
         return 0
 
@@ -281,7 +280,7 @@ def calculate_intrinsic_value(
 
 
 def calculate_ev_ebitda_value(financial_metrics: list):
-    """Implied equity value via median EV/EBITDA multiple."""
+    """通过中位数 EV/EBITDA 倍数推导隐含股权价值。"""
     if not financial_metrics:
         return 0
     m0 = financial_metrics[0]
@@ -308,7 +307,7 @@ def calculate_residual_income_value(
     terminal_growth_rate: float = 0.03,
     num_years: int = 5,
 ):
-    """Residual Income Model (Edwards‑Bell‑Ohlson)."""
+    """剩余收益模型（Edwards‑Bell‑Ohlson）。"""
     if not (market_cap and net_income and price_to_book_ratio and price_to_book_ratio > 0):
         return 0
 
@@ -328,11 +327,11 @@ def calculate_residual_income_value(
     pv_term = term_ri / (1 + cost_of_equity) ** num_years
 
     intrinsic = book_val + pv_ri + pv_term
-    return intrinsic * 0.8  # 20% margin of safety
+    return intrinsic * 0.8  # 20% 的安全边际
 
 
 ####################################
-# Enhanced DCF Helper Functions
+# 增强版 DCF 辅助函数
 ####################################
 
 def calculate_wacc(
@@ -345,19 +344,19 @@ def calculate_wacc(
     risk_free_rate: float = 0.045,
     market_risk_premium: float = 0.06
 ) -> float:
-    """Calculate WACC using available financial data."""
+    """基于可用财务数据计算加权平均资本成本（WACC）。"""
     
-    # Cost of Equity (CAPM)
+    # 股权成本（CAPM）
     cost_of_equity = risk_free_rate + beta_proxy * market_risk_premium
     
-    # Cost of Debt - estimate from interest coverage
+    # 债务成本 - 根据利息覆盖率估算
     if interest_coverage and interest_coverage > 0:
-        # Higher coverage = lower cost of debt
+        # 更高的覆盖率 = 更低的债务成本
         cost_of_debt = max(risk_free_rate + 0.01, risk_free_rate + (10 / interest_coverage))
     else:
-        cost_of_debt = risk_free_rate + 0.05  # Default spread
+        cost_of_debt = risk_free_rate + 0.05  # 默认利差
     
-    # Weights
+    # 权重
     net_debt = max((total_debt or 0) - (cash or 0), 0)
     total_value = market_cap + net_debt
     
@@ -365,23 +364,23 @@ def calculate_wacc(
         weight_equity = market_cap / total_value
         weight_debt = net_debt / total_value
         
-        # Tax shield (assume 25% corporate tax rate)
+        # 税盾（假设公司税率为 25%）
         wacc = (weight_equity * cost_of_equity) + (weight_debt * cost_of_debt * 0.75)
     else:
         wacc = cost_of_equity
     
-    return min(max(wacc, 0.06), 0.20)  # Floor 6%, cap 20%
+    return min(max(wacc, 0.06), 0.20)  # 最低 6%，最高 20%
 
 
 def calculate_fcf_volatility(fcf_history: list[float]) -> float:
-    """Calculate FCF volatility as coefficient of variation."""
+    """将自由现金流（FCF）波动率计算为变异系数。"""
     if len(fcf_history) < 3:
-        return 0.5  # Default moderate volatility
+        return 0.5  # 默认中等波动率
     
-    # Filter out zeros and negatives for volatility calc
+    # 筛选出零和负值用于波动率计算
     positive_fcf = [fcf for fcf in fcf_history if fcf > 0]
     if len(positive_fcf) < 2:
-        return 0.8  # High volatility if mostly negative FCF
+        return 0.8  # 如果大部分为负 FCF，则为高波动率
     
     try:
         mean_fcf = statistics.mean(positive_fcf)
@@ -398,51 +397,51 @@ def calculate_enhanced_dcf_value(
     market_cap: float,
     revenue_growth: float | None = None
 ) -> float:
-    """Enhanced DCF with multi-stage growth."""
+    """增强版DCF（多阶段增长）。"""
     
     if not fcf_history or fcf_history[0] <= 0:
         return 0
     
-    # Analyze FCF trend and quality
+    # 分析 FCF 趋势和质量
     fcf_current = fcf_history[0]
     fcf_avg_3yr = sum(fcf_history[:3]) / min(3, len(fcf_history))
     fcf_volatility = calculate_fcf_volatility(fcf_history)
     
-    # Stage 1: High Growth (Years 1-3)
-    # Use revenue growth but cap based on business maturity
+    # 阶段 1：高增长（第 1-3 年）
+    # 使用收入增长，但根据业务成熟度设置上限
     high_growth = min(revenue_growth or 0.05, 0.25) if revenue_growth else 0.05
-    if market_cap > 50_000_000_000:  # Large cap
+    if market_cap > 50_000_000_000:  # 大盘股
         high_growth = min(high_growth, 0.10)
     
-    # Stage 2: Transition (Years 4-7)
+    # 阶段 2：过渡（第 4-7 年）
     transition_growth = (high_growth + 0.03) / 2
     
-    # Stage 3: Terminal (steady state)
+    # 阶段 3：终期（稳定状态）
     terminal_growth = min(0.03, high_growth * 0.6)
     
-    # Project FCF with stages
+    # 分阶段预测 FCF
     pv = 0
-    base_fcf = max(fcf_current, fcf_avg_3yr * 0.85)  # Conservative base
+    base_fcf = max(fcf_current, fcf_avg_3yr * 0.85)  # 保守基准
     
-    # High growth stage
+    # 高增长阶段
     for year in range(1, 4):
         fcf_projected = base_fcf * (1 + high_growth) ** year
         pv += fcf_projected / (1 + wacc) ** year
     
-    # Transition stage
+    # 过渡阶段
     for year in range(4, 8):
-        transition_rate = transition_growth * (8 - year) / 4  # Declining
+        transition_rate = transition_growth * (8 - year) / 4  # 下降
         fcf_projected = base_fcf * (1 + high_growth) ** 3 * (1 + transition_rate) ** (year - 3)
         pv += fcf_projected / (1 + wacc) ** year
     
-    # Terminal value
+    # 终值
     final_fcf = base_fcf * (1 + high_growth) ** 3 * (1 + transition_growth) ** 4
     if wacc <= terminal_growth:
-        terminal_growth = wacc * 0.8  # Adjust if invalid
+        terminal_growth = wacc * 0.8  # 如果无效则调整
     terminal_value = (final_fcf * (1 + terminal_growth)) / (wacc - terminal_growth)
     pv_terminal = terminal_value / (1 + wacc) ** 7
     
-    # Quality adjustment based on FCF volatility
+    # 基于 FCF 波动率的质量调整
     quality_factor = max(0.7, 1 - (fcf_volatility * 0.5))
     
     return (pv + pv_terminal) * quality_factor
@@ -455,7 +454,7 @@ def calculate_dcf_scenarios(
     market_cap: float,
     revenue_growth: float | None = None
 ) -> dict:
-    """Calculate DCF under multiple scenarios."""
+    """在多种情景下计算DCF。"""
     
     scenarios = {
         'bear': {'growth_adj': 0.5, 'wacc_adj': 1.2, 'terminal_adj': 0.8},
@@ -478,7 +477,7 @@ def calculate_dcf_scenarios(
             revenue_growth=adjusted_revenue_growth
         )
     
-    # Probability-weighted average
+    # 概率加权平均
     expected_value = (
         results['bear'] * 0.2 + 
         results['base'] * 0.6 + 
